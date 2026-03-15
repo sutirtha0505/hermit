@@ -1,0 +1,212 @@
+#include <android/log.h> // NOLINT
+#include <atomic>        // NOLINT
+#include <jni.h>         // NOLINT
+#include <mutex>
+#include <string> // NOLINT
+#include <vector> // NOLINT
+
+#include "ggml.h"
+#include "llama.h"
+
+#define TAG "HermitNative"
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
+#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+
+// Global state
+static llama_model *g_model = nullptr;
+static llama_context *g_ctx = nullptr;
+static llama_sampler *g_sampler = nullptr;
+static std::mutex g_mutex;
+static std::atomic<bool> g_cancel_generation(false);
+
+static void common_log_callback(ggml_log_level level, const char *text,
+                                void *user_data) {
+  (void)user_data;
+  if (level == GGML_LOG_LEVEL_ERROR) {
+    LOGE("%s", text);
+  } else {
+    LOGI("%s", text);
+  }
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_example_nativelib_NativeLib_loadModel(JNIEnv *env, jobject thiz,
+                                               jstring model_path) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  const char *path = env->GetStringUTFChars(model_path, nullptr);
+  LOGI("Loading model from: %s", path);
+
+  llama_log_set(common_log_callback, nullptr);
+  llama_backend_init();
+
+  llama_model_params model_params = llama_model_default_params();
+  g_model = llama_model_load_from_file(path, model_params);
+
+  env->ReleaseStringUTFChars(model_path, path);
+
+  if (g_model == nullptr) {
+    LOGE("Failed to load model from %s", path);
+    return -1;
+  }
+
+  llama_context_params ctx_params = llama_context_default_params();
+  ctx_params.n_ctx = 2048; // Context size
+
+  g_ctx = llama_init_from_model(g_model, ctx_params);
+  if (g_ctx == nullptr) {
+    LOGE("Failed to create context with model");
+    llama_model_free(g_model);
+    g_model = nullptr;
+    return -1;
+  }
+
+  const llama_vocab *vocab = llama_model_get_vocab(g_model);
+  llama_sampler_chain_params sparams = llama_sampler_chain_default_params();
+  g_sampler = llama_sampler_chain_init(sparams);
+  llama_sampler_chain_add(g_sampler, llama_sampler_init_temp(0.8f));
+  llama_sampler_chain_add(g_sampler,
+                          llama_sampler_init_dist(42)); // Fixed arbitrary seed
+
+  LOGI("Model loaded successfully");
+  return 0; // Success
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_example_nativelib_NativeLib_unloadModel(JNIEnv *env, jobject thiz) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  LOGI("Unloading model");
+
+  if (g_sampler) {
+    llama_sampler_free(g_sampler);
+    g_sampler = nullptr;
+  }
+  if (g_ctx) {
+    llama_free(g_ctx);
+    g_ctx = nullptr;
+  }
+  if (g_model) {
+    llama_model_free(g_model);
+    g_model = nullptr;
+  }
+  llama_backend_free();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_example_nativelib_NativeLib_stopGeneration(JNIEnv *env, jobject thiz) {
+  g_cancel_generation = true;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_example_nativelib_NativeLib_completion(JNIEnv *env, jobject thiz,
+                                                jstring prompt) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+
+  if (!g_model || !g_ctx || !g_sampler) {
+    LOGE("Model not loaded");
+    return env->NewStringUTF("Error: Model not loaded.");
+  }
+
+  const char *p = env->GetStringUTFChars(prompt, nullptr);
+  std::string prompt_str(p);
+  env->ReleaseStringUTFChars(prompt, p);
+
+  LOGI("Generating completion for raw prompt: %s", prompt_str.c_str());
+
+  g_cancel_generation = false;
+
+  const char *tmpl = llama_model_chat_template(g_model, nullptr);
+  std::string final_prompt = prompt_str;
+
+  if (tmpl != nullptr) {
+    std::vector<llama_chat_message> msgs;
+    msgs.push_back({"system", "You are a helpful and concise AI assistant."});
+    msgs.push_back({"user", prompt_str.c_str()});
+
+    std::vector<char> formatted(8192);
+    int32_t len =
+        llama_chat_apply_template(tmpl, msgs.data(), msgs.size(), true,
+                                  formatted.data(), formatted.size());
+    if (len > 0) {
+      if (len > formatted.size()) {
+        formatted.resize(len);
+        llama_chat_apply_template(tmpl, msgs.data(), msgs.size(), true,
+                                  formatted.data(), formatted.size());
+      }
+      final_prompt = std::string(formatted.data(), len);
+    }
+  }
+
+  LOGI("Formatted prompt: %s", final_prompt.c_str());
+
+  std::vector<llama_token> embd_inp;
+
+  const int n_prompt_max = final_prompt.length() + 128; // Estimate
+  embd_inp.resize(n_prompt_max);
+
+  const llama_vocab *vocab = llama_model_get_vocab(g_model);
+  int n_prompt =
+      llama_tokenize(vocab, final_prompt.c_str(), final_prompt.length(),
+                     embd_inp.data(), embd_inp.size(), true, true);
+  if (n_prompt < 0) {
+    LOGE("Failed to tokenize");
+    return env->NewStringUTF("Error: Tokenization failed.");
+  }
+  embd_inp.resize(n_prompt);
+
+  llama_batch batch = llama_batch_get_one(embd_inp.data(), embd_inp.size());
+
+  if (llama_decode(g_ctx, batch)) {
+    LOGE("Failed to decode");
+    return env->NewStringUTF("Error: Decode failed.");
+  }
+
+  std::string final_response = "";
+  int n_cur = batch.n_tokens;
+  int n_predict = 1024; // Increased token limit for actual replies
+
+  jclass cls = env->GetObjectClass(thiz);
+  jmethodID postTokenId =
+      env->GetMethodID(cls, "postToken", "(Ljava/lang/String;)V");
+
+  while (n_cur <= n_prompt + n_predict) {
+    if (g_cancel_generation) {
+      LOGI("Generation cancelled externally.");
+      break;
+    }
+
+    llama_token new_token_id = llama_sampler_sample(g_sampler, g_ctx, -1);
+    llama_sampler_accept(g_sampler, new_token_id);
+
+    if (llama_vocab_is_eog(vocab, new_token_id)) {
+      LOGI("End of generation reached.");
+      break;
+    }
+
+    char buf[256];
+    int n =
+        llama_token_to_piece(vocab, new_token_id, buf, sizeof(buf), 0, true);
+    if (n < 0) {
+      LOGE("Failed to convert token to piece.");
+      break;
+    }
+
+    std::string piece(buf, n);
+    final_response += piece;
+
+    // Pass token to Kotlin callback
+    jstring jPiece = env->NewStringUTF(piece.c_str());
+    env->CallVoidMethod(thiz, postTokenId, jPiece);
+    env->DeleteLocalRef(jPiece);
+
+    batch = llama_batch_get_one(&new_token_id, 1);
+    if (llama_decode(g_ctx, batch)) {
+      LOGE("Failed to decode token");
+      break;
+    }
+
+    n_cur += 1;
+  }
+
+  LOGI("Completion generated successfully.");
+  return env->NewStringUTF(final_response.c_str());
+}
