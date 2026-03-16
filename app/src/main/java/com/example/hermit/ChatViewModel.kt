@@ -39,6 +39,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     var isModelLoaded by mutableStateOf(false)
         private set
 
+    var loadedModelPath by mutableStateOf<String?>(null)
+        private set
+
     var isGenerating by mutableStateOf(false)
         private set
 
@@ -90,6 +93,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadModel(path: String) {
+        if (isGenerating) return
+        
+        // Unload existing model if any
+        if (isModelLoaded) {
+            unloadModel()
+        }
+
         val modelName = path.substringAfterLast("/")
         messages.add(ChatMessage(text = "System: ⏳ Initializing engine and loading model: $modelName. This may take a moment...", isUser = false, isSystem = true))
         
@@ -99,8 +109,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val loadTimeMs = System.currentTimeMillis() - startTime
             
             if (result == 0) {
-                isModelLoaded = true
                 withContext(Dispatchers.Main) {
+                    isModelLoaded = true
+                    loadedModelPath = path
                     messages.add(ChatMessage(text = "System: ✅ Model loaded successfully!\n- Name: $modelName\n- Load time: ${loadTimeMs}ms\n- Context window: 2048 tokens\n- Backend: CPU", isUser = false, isSystem = true))
                 }
             } else {
@@ -109,6 +120,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    fun unloadModel() {
+        if (isGenerating) return
+        nativeLib.unloadModel()
+        isModelLoaded = false
+        loadedModelPath = null
+        messages.add(ChatMessage(text = "System: 🛑 Model unloaded.", isUser = false, isSystem = true))
     }
 
     fun sendMessage(text: String) {

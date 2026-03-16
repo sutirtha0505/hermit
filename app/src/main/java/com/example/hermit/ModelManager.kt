@@ -17,4 +17,13 @@ class ModelManager(private val context: Context) {
             LocalModel(it.name, it.absolutePath, true)
         } ?: emptyList()
     }
+
+    fun deleteModel(path: String): Boolean {
+        val file = File(path)
+        return if (file.exists()) {
+            file.delete()
+        } else {
+            false
+        }
+    }
 }

@@ -3,6 +3,7 @@
 #include <jni.h>         // NOLINT
 #include <mutex>
 #include <string> // NOLINT
+#include <thread>
 #include <vector> // NOLINT
 
 #include "ggml.h"
@@ -51,6 +52,10 @@ Java_com_example_nativelib_NativeLib_loadModel(JNIEnv *env, jobject thiz,
 
   llama_context_params ctx_params = llama_context_default_params();
   ctx_params.n_ctx = 2048; // Context size
+  const unsigned int detected_cores = std::thread::hardware_concurrency();
+  const int32_t thread_count = detected_cores > 0 ? static_cast<int32_t>(detected_cores) : 1;
+  ctx_params.n_threads = thread_count;
+  ctx_params.n_threads_batch = thread_count;
 
   g_ctx = llama_init_from_model(g_model, ctx_params);
   if (g_ctx == nullptr) {
@@ -59,6 +64,10 @@ Java_com_example_nativelib_NativeLib_loadModel(JNIEnv *env, jobject thiz,
     g_model = nullptr;
     return -1;
   }
+
+  llama_set_n_threads(g_ctx, thread_count, thread_count);
+  LOGI("Inference threads configured: n_threads=%d, n_threads_batch=%d, detected_cores=%u",
+       llama_n_threads(g_ctx), llama_n_threads_batch(g_ctx), detected_cores);
 
   const llama_vocab *vocab = llama_model_get_vocab(g_model);
   llama_sampler_chain_params sparams = llama_sampler_chain_default_params();

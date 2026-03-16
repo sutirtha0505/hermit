@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Base size -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <size android:width="300dp" android:height="300dp" />
+        </shape>
+    </item>
+
+    <!-- Logo: Scaled down (approx 45% of 200dp viewport is 90dp) -->
+    <item
+        android:drawable="@drawable/hermit"
+        android:width="90dp"
+        android:height="90dp"
+        android:gravity="center"/>
+
+    <!-- "Hermit" Text Representative -->
+    <!-- Note: Since Vector Drawables don't support text, this uses a shape.
+         For real text, you should create a vector of the word "Hermit" in a design tool
+         and name it 'hermit_text.xml', then replace this item's drawable. -->
+    <!-- create a gap -->
+
+<!--    <item-->
+<!--        android:drawable="@drawable/hermit_name"-->
+<!--        android:width="100dp"-->
+<!--        android:height="30dp"-->
+<!--        android:gravity="center"-->
+<!--        android:top="90dp" />-->
+
+
+
+</layer-list>
