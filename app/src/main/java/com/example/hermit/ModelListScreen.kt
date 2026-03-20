@@ -21,7 +21,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ModelListScreen(
-    onModelSelected: (LocalModel) -> Unit,
+    onModelSelected: (LocalModel, Boolean) -> Unit,
     onImportModel: () -> Unit,
     onBack: () -> Unit,
     onDownloadNew: () -> Unit,
@@ -111,9 +111,20 @@ fun ModelListScreen(
                                     IconButton(onClick = { modelToDelete = model }) {
                                         Icon(Icons.Default.Delete, contentDescription = "Delete")
                                     }
+                                    Spacer(Modifier.width(8.dp))
+                                    Button(
+                                        onClick = { onModelSelected(model, false) },
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                                    ) {
+                                        Text("CPU", style = MaterialTheme.typography.labelLarge)
+                                    }
                                     Spacer(Modifier.width(4.dp))
-                                    Button(onClick = { onModelSelected(model) }) {
-                                        Text("Load")
+                                    Button(
+                                        onClick = { onModelSelected(model, true) },
+                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("GPU", style = MaterialTheme.typography.labelLarge)
                                     }
                                 }
                             }

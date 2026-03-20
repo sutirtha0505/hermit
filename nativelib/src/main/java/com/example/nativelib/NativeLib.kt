@@ -8,9 +8,10 @@ class NativeLib {
     /**
      * Loads the model from the given path.
      * @param modelPath Absolute path to the .gguf model file.
+     * @param useGpu Whether to attempt GPU offloading.
      * @return 0 on success, non-zero on error.
      */
-    external fun loadModel(modelPath: String): Int
+    external fun loadModel(modelPath: String, useGpu: Boolean): Int
 
     /**
      * Frees the loaded model and associated resources.

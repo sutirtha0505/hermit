@@ -53,8 +53,8 @@ class MainActivity : ComponentActivity() {
                         onOpenSettings = { currentScreen = "models" }
                     )
                     "models" -> ModelListScreen(
-                        onModelSelected = { model ->
-                            chatViewModel.loadModel(model.path)
+                        onModelSelected = { model, useGpu ->
+                            chatViewModel.loadModel(model.path, useGpu)
                             currentScreen = "chat"
                         },
                         onImportModel = { /* TODO: File picker */ },

@@ -92,7 +92,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun loadModel(path: String) {
+    fun loadModel(path: String, useGpu: Boolean) {
         if (isGenerating) return
         
         // Unload existing model if any
@@ -101,11 +101,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val modelName = path.substringAfterLast("/")
-        messages.add(ChatMessage(text = "System: ⏳ Initializing engine and loading model: $modelName. This may take a moment...", isUser = false, isSystem = true))
+        val modeStr = if (useGpu) "GPU" else "CPU"
+        messages.add(ChatMessage(text = "System: ⏳ Initializing engine and loading model ($modeStr mode): $modelName. This may take a moment...", isUser = false, isSystem = true))
         
         viewModelScope.launch(Dispatchers.IO) {
             val startTime = System.currentTimeMillis()
-            val result = nativeLib.loadModel(path)
+            val result = nativeLib.loadModel(path, useGpu)
             val loadTimeMs = System.currentTimeMillis() - startTime
             
             if (result == 0) {

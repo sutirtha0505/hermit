@@ -86,11 +86,23 @@ From Android Studio:
 
 ### 3) Native ABI targets
 
-The native module builds only for:
-- arm64-v8a
-- x86_64
+The native module is currently optimized for:
+- **arm64-v8a** (Apple Silicon Macs, modern Android phones)
 
-This is configured in nativelib/build.gradle.kts and is important for emulator/device compatibility.
+This is configured in `nativelib/build.gradle.kts`. To target other architectures, update the `abiFilters` section.
+
+### 4) Vulkan Support Setup
+
+Vulkan support is enabled by default to boost inference performance. To build with Vulkan:
+
+1. **Vulkan Headers**: The project includes `Vulkan-Headers` locally. Ensure they are correctly referenced in `nativelib/src/main/cpp/CMakeLists.txt`.
+2. **Shader Compiler (glslc)**: You must have the `glslc` compiler installed. It is bundled with the Android NDK under the `shader-tools` directory.
+3. **NDK Path**: In `nativelib/src/main/cpp/CMakeLists.txt`, update the `Vulkan_GLSLC_EXECUTABLE` path to point to the `glslc` binary in your local NDK installation.
+
+Example:
+```cmake
+set(Vulkan_GLSLC_EXECUTABLE "/path/to/your/sdk/ndk/<version>/shader-tools/darwin-x86_64/glslc" CACHE FILEPATH "" FORCE)
+```
 
 ## How To Run
 
@@ -215,17 +227,18 @@ Behavior summary:
 - Ensure NDK and CMake 3.22.1 are installed from SDK Manager.
 - In Android Studio, run Build -> Refresh Linked C++ Projects.
 
-### App installs but model loading fails
+### App installs but model loading fails / crashes
 
-- Verify the GGUF file exists and is fully downloaded.
-- Try smaller Q4 models first (for example, 1B-1.5B class).
-- Check Logcat tag HermitNative for native loading errors.
+- **Vulkan Issues**: If the app crashes immediately upon loading a model, it may be due to Vulkan initialization failure on your specific hardware.
+- **Troubleshooting**: Check Logcat tag `HermitNative` or filter for `Error`.
+- **CPU Fallback**: The app attempts to fall back to CPU if GPU loading fails, but certain initialization errors can still cause a crash.
+- **Model Size**: Ensure you are not trying to load a model that exceeds your device's available RAM.
 
-### Download problems
+### Git Push Errors (403 Forbidden)
 
-- Confirm device internet access.
-- Retry download from the model list.
-- If partial file is corrupted, delete it from app storage and re-download.
+If you see errors like `Permission to ... denied` when pushing, it is because you are trying to push to the original upstream repositories of the submodules.
+- To save your changes, you should fork the submodules and update the `.gitmodules` file in the root directory to point to your forks.
+- Alternatively, you can manage the native code as part of your main repository by removing the submodule configuration.
 
 ## Contributing
 

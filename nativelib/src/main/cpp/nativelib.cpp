@@ -34,10 +34,10 @@ static void common_log_callback(ggml_log_level level, const char *text,
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_example_nativelib_NativeLib_loadModel(JNIEnv *env, jobject thiz,
-                                               jstring model_path) {
+                                               jstring model_path, jboolean use_gpu) {
   std::lock_guard<std::mutex> lock(g_mutex);
   const char *path = env->GetStringUTFChars(model_path, nullptr);
-  LOGI("Loading model from: %s", path);
+  LOGI("Loading model from: %s (GPU requested: %s)", path, use_gpu ? "true" : "false");
 
   llama_log_set(common_log_callback, nullptr);
   llama_backend_init();
@@ -45,26 +45,21 @@ Java_com_example_nativelib_NativeLib_loadModel(JNIEnv *env, jobject thiz,
   llama_model_params model_params = llama_model_default_params();
   g_gpu_fallback_triggered = false;
 
-  // Set GPU layers to a high number to attempt full offloading.
-  #if defined(GGML_USE_VULKAN) || defined(GGML_USE_METAL) || defined(GGML_USE_CUBLAS) || defined(GGML_USE_CUDA) || defined(GGML_USE_KOMPUTE)
-    model_params.n_gpu_layers = 999;
-    LOGI("GPU offloading enabled (attempting 999 layers)");
-  #else
+  if (use_gpu) {
+    #if defined(GGML_USE_VULKAN) || defined(GGML_USE_METAL) || defined(GGML_USE_CUBLAS) || defined(GGML_USE_CUDA) || defined(GGML_USE_KOMPUTE)
+      model_params.n_gpu_layers = 999;
+      LOGI("GPU offloading enabled (attempting 999 layers)");
+    #else
+      model_params.n_gpu_layers = 0;
+      LOGE("GPU requested but no GPU backend compiled!");
+      env->ReleaseStringUTFChars(model_path, path);
+      return -2; // Error code for "GPU not supported"
+    #endif
+  } else {
     model_params.n_gpu_layers = 0;
-  #endif
+  }
 
   g_model = llama_model_load_from_file(path, model_params);
-
-  // Fallback check: if GPU loading failed, try one more time with CPU only.
-  if (g_model == nullptr && model_params.n_gpu_layers > 0) {
-      LOGI("Failed to load model with GPU, retrying with CPU only...");
-      model_params.n_gpu_layers = 0;
-      g_model = llama_model_load_from_file(path, model_params);
-      g_gpu_active = false;
-      g_gpu_fallback_triggered = true;
-  } else if (g_model != nullptr) {
-      g_gpu_active = (model_params.n_gpu_layers > 0);
-  }
 
   env->ReleaseStringUTFChars(model_path, path);
 
@@ -72,6 +67,8 @@ Java_com_example_nativelib_NativeLib_loadModel(JNIEnv *env, jobject thiz,
     LOGE("Failed to load model from %s", path);
     return -1;
   }
+
+  g_gpu_active = (model_params.n_gpu_layers > 0);
 
   llama_context_params ctx_params = llama_context_default_params();
   ctx_params.n_ctx = 2048; // Context size
