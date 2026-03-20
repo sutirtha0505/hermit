@@ -19,7 +19,19 @@ set(GGML_CPU_ARM_EXTRA OFF CACHE BOOL "Disable extra ARM" FORCE)
 set(GGML_USE_CPU_HBM OFF CACHE BOOL "Disable CPU HBM" FORCE)
 set(GGML_USE_LLAMAFILE OFF CACHE BOOL "Disable llamafile" FORCE)
 set(GGML_USE_CPU_REPACK OFF CACHE BOOL "Disable CPU repack" FORCE)
-set(GGML_VULKAN OFF CACHE BOOL "Disable Vulkan" FORCE)
+set(GGML_VULKAN ON CACHE BOOL "Enable Vulkan" FORCE)
+
+# Add Vulkan Headers from the local project directory
+set(VULKAN_HEADERS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/Vulkan-Headers)
+include_directories(SYSTEM ${VULKAN_HEADERS_DIR}/include)
+set(Vulkan_INCLUDE_DIR ${VULKAN_HEADERS_DIR}/include CACHE PATH "Vulkan include dir" FORCE)
+
+# Point to the correct glslc executable in the Android NDK
+set(Vulkan_GLSLC_EXECUTABLE "/Volumes/Crucial_NVME_M.2/Android_SDK/ndk/28.2.13676358/shader-tools/darwin-x86_64/glslc" CACHE FILEPATH "glslc executable" FORCE)
+
+# Explicitly disable extensions that NDK glslc doesn't support but might be misdetected
+set(GGML_VULKAN_COOPMAT_GLSLC_SUPPORT OFF CACHE BOOL "Disable coopmat" FORCE)
+set(GGML_VULKAN_COOPMAT2_GLSLC_SUPPORT OFF CACHE BOOL "Disable coopmat2" FORCE)
 
 add_subdirectory(${LLAMA_DIR})
 

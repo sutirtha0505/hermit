@@ -19,6 +19,8 @@ static llama_context *g_ctx = nullptr;
 static llama_sampler *g_sampler = nullptr;
 static std::mutex g_mutex;
 static std::atomic<bool> g_cancel_generation(false);
+static bool g_gpu_active = false;
+static bool g_gpu_fallback_triggered = false;
 
 static void common_log_callback(ggml_log_level level, const char *text,
                                 void *user_data) {
@@ -41,7 +43,28 @@ Java_com_example_nativelib_NativeLib_loadModel(JNIEnv *env, jobject thiz,
   llama_backend_init();
 
   llama_model_params model_params = llama_model_default_params();
+  g_gpu_fallback_triggered = false;
+
+  // Set GPU layers to a high number to attempt full offloading.
+  #if defined(GGML_USE_VULKAN) || defined(GGML_USE_METAL) || defined(GGML_USE_CUBLAS) || defined(GGML_USE_CUDA) || defined(GGML_USE_KOMPUTE)
+    model_params.n_gpu_layers = 999;
+    LOGI("GPU offloading enabled (attempting 999 layers)");
+  #else
+    model_params.n_gpu_layers = 0;
+  #endif
+
   g_model = llama_model_load_from_file(path, model_params);
+
+  // Fallback check: if GPU loading failed, try one more time with CPU only.
+  if (g_model == nullptr && model_params.n_gpu_layers > 0) {
+      LOGI("Failed to load model with GPU, retrying with CPU only...");
+      model_params.n_gpu_layers = 0;
+      g_model = llama_model_load_from_file(path, model_params);
+      g_gpu_active = false;
+      g_gpu_fallback_triggered = true;
+  } else if (g_model != nullptr) {
+      g_gpu_active = (model_params.n_gpu_layers > 0);
+  }
 
   env->ReleaseStringUTFChars(model_path, path);
 
@@ -76,7 +99,7 @@ Java_com_example_nativelib_NativeLib_loadModel(JNIEnv *env, jobject thiz,
   llama_sampler_chain_add(g_sampler,
                           llama_sampler_init_dist(42)); // Fixed arbitrary seed
 
-  LOGI("Model loaded successfully");
+  LOGI("Model loaded successfully. GPU Active: %s", g_gpu_active ? "true" : "false");
   return 0; // Success
 }
 
@@ -97,12 +120,49 @@ Java_com_example_nativelib_NativeLib_unloadModel(JNIEnv *env, jobject thiz) {
     llama_model_free(g_model);
     g_model = nullptr;
   }
+  g_gpu_active = false;
+  g_gpu_fallback_triggered = false;
   llama_backend_free();
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_example_nativelib_NativeLib_stopGeneration(JNIEnv *env, jobject thiz) {
   g_cancel_generation = true;
+}
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_example_nativelib_NativeLib_getContextSize(JNIEnv *env, jobject thiz) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!g_ctx) return 0;
+  return static_cast<jint>(llama_n_ctx(g_ctx));
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_example_nativelib_NativeLib_getBackendName(JNIEnv *env, jobject thiz) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  if (!g_model) return env->NewStringUTF("None");
+
+  if (g_gpu_fallback_triggered) {
+      return env->NewStringUTF("CPU (GPU Fallback)");
+  }
+
+  if (!g_gpu_active) {
+      return env->NewStringUTF("CPU");
+  }
+
+  #if defined(GGML_USE_VULKAN)
+    return env->NewStringUTF("Vulkan (GPU)");
+  #elif defined(GGML_USE_METAL)
+    return env->NewStringUTF("Metal (GPU)");
+  #elif defined(GGML_USE_CUBLAS) || defined(GGML_USE_CUDA)
+    return env->NewStringUTF("CUDA (GPU)");
+  #elif defined(GGML_USE_SYCL)
+    return env->NewStringUTF("SYCL (GPU)");
+  #elif defined(GGML_USE_KOMPUTE)
+    return env->NewStringUTF("Kompute (GPU)");
+  #else
+    return env->NewStringUTF("CPU");
+  #endif
 }
 
 extern "C" JNIEXPORT jstring JNICALL

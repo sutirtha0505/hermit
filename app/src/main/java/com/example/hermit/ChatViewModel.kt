@@ -109,10 +109,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             val loadTimeMs = System.currentTimeMillis() - startTime
             
             if (result == 0) {
+                val contextSize = nativeLib.getContextSize()
+                val backend = nativeLib.getBackendName()
                 withContext(Dispatchers.Main) {
                     isModelLoaded = true
                     loadedModelPath = path
-                    messages.add(ChatMessage(text = "System: ✅ Model loaded successfully!\n- Name: $modelName\n- Load time: ${loadTimeMs}ms\n- Context window: 2048 tokens\n- Backend: CPU", isUser = false, isSystem = true))
+                    messages.add(ChatMessage(text = "System: ✅ Model loaded successfully!\n- Name: $modelName\n- Load time: ${loadTimeMs}ms\n- Context window: $contextSize tokens\n- Backend: $backend", isUser = false, isSystem = true))
                 }
             } else {
                 withContext(Dispatchers.Main) {

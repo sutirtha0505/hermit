@@ -29,6 +29,16 @@ class NativeLib {
     external fun stopGeneration()
 
     /**
+     * Returns the context size of the loaded model.
+     */
+    external fun getContextSize(): Int
+
+    /**
+     * Returns the backend name being used (e.g., "CPU", "Vulkan").
+     */
+    external fun getBackendName(): String
+
+    /**
      * Interface for streaming tokens.
      */
     private var onTokenReceived: ((String) -> Unit)? = null
