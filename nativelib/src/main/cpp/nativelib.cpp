@@ -61,12 +61,13 @@ Java_com_example_nativelib_NativeLib_loadModel(JNIEnv *env, jobject thiz,
 
   g_model = llama_model_load_from_file(path, model_params);
 
-  env->ReleaseStringUTFChars(model_path, path);
-
   if (g_model == nullptr) {
     LOGE("Failed to load model from %s", path);
+    env->ReleaseStringUTFChars(model_path, path);
     return -1;
   }
+
+  env->ReleaseStringUTFChars(model_path, path);
 
   g_gpu_active = (model_params.n_gpu_layers > 0);
 
